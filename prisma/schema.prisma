@@ -1,0 +1,217 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum DeliverableStatus {
+  DRAFT
+  IN_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  DELIVERED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+model Organization {
+  id             String             @id @default(cuid())
+  name           String
+  slug           String             @unique
+  logoUrl        String?
+  primaryColor   String             @default("#27685f")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  members        Membership[]
+  clients        Client[]
+  subscription   PlanSubscription?
+  activityLogs   ActivityLog[]
+}
+
+model User {
+  id             String             @id @default(cuid())
+  email          String             @unique
+  name           String?
+  image          String?
+  memberships    Membership[]
+  notifications  Notification[]
+  activityLogs   ActivityLog[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  role           UserRole     @default(MEMBER)
+  organizationId String
+  userId         String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Client {
+  id             String        @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts       ClientContact[]
+  projects       Project[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+}
+
+model ClientContact {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  name         String
+  clientId     String
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  deliverables Deliverable[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([clientId, updatedAt])
+}
+
+model Deliverable {
+  id          String            @id @default(cuid())
+  name        String
+  status      DeliverableStatus @default(DRAFT)
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions    DeliverableVersion[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([projectId, status])
+}
+
+model DeliverableVersion {
+  id            String                   @id @default(cuid())
+  versionNumber Int
+  fileKey        String
+  fileName       String
+  contentType    String?
+  deliverableId String
+  deliverable   Deliverable              @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  comments      Comment[]
+  decisions     ApprovalDecisionRecord[]
+  createdAt     DateTime                 @default(now())
+
+  @@unique([deliverableId, versionNumber])
+  @@index([deliverableId, createdAt])
+}
+
+model Comment {
+  id                   String             @id @default(cuid())
+  content              String
+  isInternal           Boolean            @default(false)
+  userId               String?
+  contactEmail         String?
+  deliverableVersionId String
+  version              DeliverableVersion @relation(fields: [deliverableVersionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime           @default(now())
+
+  @@index([deliverableVersionId, createdAt])
+}
+
+model ApprovalDecisionRecord {
+  id                   String             @id @default(cuid())
+  decision             ApprovalDecision
+  note                 String?
+  deliverableVersionId String
+  version              DeliverableVersion @relation(fields: [deliverableVersionId], references: [id], onDelete: Cascade)
+  decidedByEmail       String
+  createdAt            DateTime           @default(now())
+
+  @@index([deliverableVersionId, createdAt])
+}
+
+model ActivityLog {
+  id             String       @id @default(cuid())
+  action         String
+  details        String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model PlanSubscription {
+  id             String       @id @default(cuid())
+  stripeId       String       @unique
+  planType       String
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  status         String
+}
+
+model MagicLinkToken {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthEvent {
+  id          String   @id @default(cuid())
+  event       String
+  emailDigest String?
+  ipDigest    String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([event, createdAt])
+}
